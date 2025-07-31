@@ -8,13 +8,13 @@ from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# Load embedding model
-embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+# Using a lightweight model for embedding
+embed_model = SentenceTransformer("all-MiniLM-L6-v2")   
 
-# Gemini model
+# Initialize Gemini LLM model
 llm_model = genai.GenerativeModel("models/gemini-2.0-flash")
 
-# --- PDF to Text ---
+# --- Function to Convert PDF to Text ---
 def pdf_to_text(pdf_file):
     reader = PdfReader(pdf_file)
     text = ""
@@ -22,7 +22,7 @@ def pdf_to_text(pdf_file):
         text += page.extract_text() + "\n"
     return text
 
-# --- Text Chunking ---
+# --- Chunk Text ---
 def chunk_text(text, chunk_size=300, overlap=50):
     words = text.split()
     chunks = []
@@ -31,20 +31,20 @@ def chunk_text(text, chunk_size=300, overlap=50):
         chunks.append(chunk)
     return chunks
 
-# --- Embed and Store ---
+# --- Create FAISS Index ---
 def create_faiss_index(chunks):
     embeddings = embed_model.encode(chunks)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
     return index, embeddings, chunks
 
-# --- Search Relevant Chunks ---
+# --- Search Index ---
 def search_index(query, index, chunks, top_k=3):
     query_vec = embed_model.encode([query])
     D, I = index.search(query_vec, top_k)
     return [chunks[i] for i in I[0]]
 
-# --- Gemini QA ---
+# --- Get Answer from Gemini ---
 def get_gemini_answer(question, context):
     prompt = f"""
 Answer the question based on the context below. Be accurate and specific.
@@ -58,11 +58,43 @@ Question:
     response = llm_model.generate_content(prompt)
     return response.text
 
-# --- Streamlit UI ---
+# --- Streamlit App ---
 st.set_page_config(page_title="PDF Q&A with Gemini", layout="centered")
+st.markdown(
+    """
+    <style>
+    /* Full page image background */
+    body {
+        background-image: url('https://images.unsplash.com/photo-1524995997946-a1c2e315a42f');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-blend-mode: overlay;
+        background-color: rgba(255, 255, 255, 0.85);
+    }
+
+    /* Chat message bubble style */
+    .stChatMessage {
+        background-color: rgba(255, 255, 255, 0.85);
+        padding: 10px;
+        border-radius: 12px;
+        margin-bottom: 10px;
+    }
+
+    /* Title style */
+    .stApp h1 {
+        color: #0f172a;
+        text-align: center;
+        font-size: 2.5em;
+        font-weight: 700;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 st.title("📄 Your PDF")
 
-# Initialize session state
+# Initialize session state for chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
@@ -75,7 +107,7 @@ if uploaded_file:
         index, embeddings, chunk_data = create_faiss_index(chunks)
         st.success("PDF processed successfully!")
 
-    # Chat interface
+    # Display PDF content
     user_input = st.chat_input("Ask a question about the PDF")
 
     if user_input:
@@ -86,7 +118,7 @@ if uploaded_file:
         st.session_state.chat_history.append(("user", user_input))
         st.session_state.chat_history.append(("bot", answer))
 
-    # Display conversation
+    # Display chat history
     for role, msg in st.session_state.chat_history:
         if role == "user":
             st.chat_message("user").markdown(msg)
